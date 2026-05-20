@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Calendar — StudyHub</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>" />
+</head>
+<body>
+  <button class="nav-toggle" id="nav-toggle" type="button">☰ Menu</button>
+  <div class="nav-overlay" id="nav-overlay"></div>
+  <div class="layout">
+    <aside class="sidebar">
+      <h1>StudyHub</h1>
+      <nav>
+        <a href="/index.html">Dashboard</a>
+        <a href="/courses.html">Courses</a>
+        <a href="/assignments.html">Assignments</a>
+        <a href="/study.html">Study log</a>
+      </nav>
+      <div class="sidebar-tools">
+        <button type="button" id="theme-toggle">Light mode</button>
+      </div>
+    </aside>
+    <main class="main">
+      <h2 style="margin-top:0;">Calendar</h2>
+      <div class="card">
+        <div class="actions-row" style="margin-top:0;">
+          <button type="button" class="btn-secondary" id="prev-month">←</button>
+          <strong id="month-label"></strong>
+          <button type="button" class="btn-secondary" id="next-month">→</button>
+        </div>
+        <div id="calendar" class="calendar-grid" style="margin-top:1rem;"></div>
+      </div>
+    </main>
+  </div>
+  <script src="/js/api.js"></script>
+  <script src="/js/layout.js"></script>
+  <script>
+    (function () {
+      if (!requireAuth()) return;
+      initLayout("calendar");
+
+      let year = new Date().getFullYear();
+      let month = new Date().getMonth() + 1;
+
+      async function render() {
+        const data = await api(`/api/calendar?year=${year}&month=${month}`);
+        document.getElementById("month-label").textContent =
+          new Date(year, month - 1).toLocaleString(undefined, { month: "long", year: "numeric" });
+
+        const first = new Date(year, month - 1, 1);
+        const startPad = (first.getDay() + 6) % 7;
+        const daysInMonth = new Date(year, month, 0).getDate();
+        const prevDays = new Date(year, month - 1, 0).getDate();
+        const names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+        const todayKey = new Date().toISOString().slice(0, 10);
+
+        let html = names.map((n) => `<div class="day-name">${n}</div>`).join("");
+        for (let i = 0; i < startPad; i++) {
+          const d = prevDays - startPad + i + 1;
+          html += `<div class="day other-month"><div class="num">${d}</div></div>`;
+        }
+        for (let d = 1; d <= daysInMonth; d++) {
+          const key = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+          const items = data.days[key] || [];
+          const isToday = key === todayKey;
+          html += `<div class="day${isToday ? " today" : ""}"><div class="num">${d}</div>`;
+          html += items
+            .map(
+              (a) =>
+                `<a class="cal-event" style="background:${escapeHtml(a.course_color)}" href="/course.html?id=${a.course_id}" title="${escapeHtml(a.title)}">${escapeHtml(a.title)}</a>`
+            )
+            .join("");
+          html += `</div>`;
+        }
+        const totalCells = startPad + daysInMonth;
+        const trailing = totalCells % 7 === 0 ? 0 : 7 - (totalCells % 7);
+        for (let i = 1; i <= trailing; i++) {
+          html += `<div class="day other-month"><div class="num">${i}</div></div>`;
+        }
+        document.getElementById("calendar").innerHTML = html;
+      }
+
+      document.getElementById("prev-month").onclick = () => {
+        month--;
+        if (month < 1) { month = 12; year--; }
+        render();
+      };
+      document.getElementById("next-month").onclick = () => {
+        month++;
+        if (month > 12) { month = 1; year++; }
+        render();
+      };
+      render().catch(console.error);
+    })();
+  </script>
+</body>
+</html>

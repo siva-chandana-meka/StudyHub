@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dashboard — StudyHub</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>" />
+</head>
+<body>
+  <button class="nav-toggle" id="nav-toggle" type="button">☰ Menu</button>
+  <div class="nav-overlay" id="nav-overlay"></div>
+  <div class="layout">
+    <aside class="sidebar">
+      <h1>StudyHub</h1>
+      <nav>
+        <a href="/index.html">Dashboard</a>
+        <a href="/courses.html">Courses</a>
+        <a href="/assignments.html">Assignments</a>
+        <a href="/study.html">Study log</a>
+      </nav>
+      <p style="font-size: 0.875rem; color: var(--muted);">
+        <span id="user-name"></span><br />
+        <a href="#" id="logout">Log out</a>
+      </p>
+      <div class="sidebar-tools">
+        <button type="button" id="theme-toggle">Light mode</button>
+      </div>
+    </aside>
+    <main class="main">
+      <h2 style="margin-top: 0;">Dashboard</h2>
+      <div class="stats" id="stats"></div>
+      <div class="card">
+        <h2>Weekly study goals</h2>
+        <div id="goals"></div>
+      </div>
+      <div class="card">
+        <h2>Upcoming deadlines</h2>
+        <div id="upcoming"></div>
+      </div>
+      <div class="card">
+        <h2>Overdue</h2>
+        <div id="overdue"></div>
+      </div>
+    </main>
+  </div>
+  <script src="/js/api.js"></script>
+  <script src="/js/layout.js"></script>
+  <script>
+    (function () {
+      if (!requireAuth()) return;
+      initLayout("index");
+      document.getElementById("logout").addEventListener("click", (e) => {
+        e.preventDefault();
+        setToken(null);
+        location.href = "/login.html";
+      });
+
+      function assignmentRow(a) {
+        const cat = a.category ? `<span class="badge ${a.category}">${a.category}</span>` : "";
+        return `
+        <div class="list-item">
+          <strong>${escapeHtml(a.title)}</strong>
+          ${cat}
+          <span class="badge">${a.status}</span>
+          <span style="color: var(--muted); margin-left: 0.5rem;">${formatDate(a.due_date)}</span>
+        </div>`;
+      }
+
+      async function load() {
+        const [me, dash] = await Promise.all([api("/api/auth/me"), api("/api/dashboard")]);
+        document.getElementById("user-name").textContent = me.name;
+        document.getElementById("stats").innerHTML = `
+          <div class="stat"><div class="value">${formatMinutes(dash.today_study_minutes)}</div><div class="label">Today</div></div>
+          <div class="stat"><div class="value">${formatMinutes(dash.weekly_study_minutes)}</div><div class="label">This week</div></div>
+          <div class="stat"><div class="value">${dash.completion_rate}%</div><div class="label">Done (${dash.assignments_done}/${dash.assignments_total})</div></div>
+          <div class="stat"><div class="value">${dash.overdue_assignments.length}</div><div class="label">Overdue</div></div>`;
+
+        const goalsEl = document.getElementById("goals");
+        if (!dash.study_goals.length) {
+          goalsEl.innerHTML = `<p style="color:var(--muted);">Set goals in <a href="/profile.html">Profile</a>.</p>`;
+        } else {
+          goalsEl.innerHTML = dash.study_goals
+            .map(
+              (g) => `
+            <div class="list-item">
+              <span style="color:${escapeHtml(g.course_color)}">${escapeHtml(g.course_name)}</span>
+              — ${formatMinutes(g.minutes_this_week)} / ${formatMinutes(g.weekly_minutes)}
+              <div class="progress-bar"><span style="width:${g.progress_percent}%"></span></div>
+            </div>`
+            )
+            .join("");
+        }
+
+        const up = document.getElementById("upcoming");
+        up.innerHTML = dash.upcoming_deadlines.length
+          ? dash.upcoming_deadlines.map(assignmentRow).join("")
+          : `<p style="color: var(--muted);">Nothing due soon.</p>`;
+
+        const overdueEl = document.getElementById("overdue");
+        overdueEl.innerHTML = dash.overdue_assignments.length
+          ? dash.overdue_assignments.map(assignmentRow).join("")
+          : `<p style="color: var(--muted);">All caught up.</p>`;
+      }
+      load().catch(console.error);
+    })();
+  </script>
+</body>
+</html>

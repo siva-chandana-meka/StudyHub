@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Courses — StudyHub</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>" />
+</head>
+<body>
+  <button class="nav-toggle" id="nav-toggle" type="button">☰ Menu</button>
+  <div class="nav-overlay" id="nav-overlay"></div>
+  <div class="layout">
+    <aside class="sidebar">
+      <h1>StudyHub</h1>
+      <nav>
+        <a href="/index.html">Dashboard</a>
+        <a href="/courses.html">Courses</a>
+        <a href="/assignments.html">Assignments</a>
+        <a href="/study.html">Study log</a>
+      </nav>
+      <div class="sidebar-tools">
+        <button type="button" id="theme-toggle">Light mode</button>
+      </div>
+    </aside>
+    <main class="main">
+      <h2 style="margin-top: 0;">Courses</h2>
+      <div class="card">
+        <h2>Add course</h2>
+        <p id="form-error" class="error hidden"></p>
+        <form id="course-form">
+          <label>Name</label>
+          <input type="text" id="name" required placeholder="e.g. Calculus II" />
+          <label>Color</label>
+          <input type="color" id="color" value="#3b82f6" />
+          <label>Teacher (optional)</label>
+          <input type="text" id="teacher" />
+          <button type="submit">Add course</button>
+        </form>
+        <p style="color: var(--muted); font-size: 0.875rem; margin: 1rem 0 0;">
+          After adding, you’ll open the course page to add room, schedule, assignments, and study time.
+        </p>
+      </div>
+      <div class="card">
+        <h2>Your courses</h2>
+        <p style="color: var(--muted); font-size: 0.875rem;">Click a course to open it and add details.</p>
+        <div id="course-list"></div>
+      </div>
+    </main>
+  </div>
+  <script src="/js/api.js"></script>
+  <script src="/js/layout.js"></script>
+  <script>
+    (function () {
+    if (!requireAuth()) return;
+    initLayout("courses");
+    const formError = document.getElementById("form-error");
+
+    async function loadCourses() {
+      const courses = await api("/api/courses");
+      const el = document.getElementById("course-list");
+      if (!courses.length) {
+        el.innerHTML = `<p style="color: var(--muted);">No courses yet. Add one above.</p>`;
+        return;
+      }
+      el.innerHTML = courses
+        .map((c) => {
+          const meta = [c.teacher, c.room, c.schedule].filter(Boolean).join(" · ");
+          return `
+        <a class="course-card" href="${courseUrl(c.id)}">
+          <span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${escapeHtml(c.color)};margin-right:8px;vertical-align:middle;"></span>
+          <strong>${escapeHtml(c.name)}</strong>
+          <div class="meta">${meta ? escapeHtml(meta) : "Click to add details, assignments & study time →"}</div>
+        </a>`;
+        })
+        .join("");
+    }
+
+    document.getElementById("course-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      formError.classList.add("hidden");
+      try {
+        const created = await api("/api/courses", {
+          method: "POST",
+          body: JSON.stringify({
+            name: document.getElementById("name").value.trim(),
+            color: document.getElementById("color").value,
+            teacher: document.getElementById("teacher").value.trim() || null,
+          }),
+        });
+        location.href = courseUrl(created.id);
+      } catch (err) {
+        showError(formError, err.message);
+      }
+    });
+    loadCourses().catch((err) => showError(formError, err.message));
+    })();
+  </script>
+</body>
+</html>

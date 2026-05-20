@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Assignments — StudyHub</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>" />
+</head>
+<body>
+  <button class="nav-toggle" id="nav-toggle" type="button">☰ Menu</button>
+  <div class="nav-overlay" id="nav-overlay"></div>
+  <div class="layout">
+    <aside class="sidebar">
+      <h1>StudyHub</h1>
+      <nav>
+        <a href="/index.html">Dashboard</a>
+        <a href="/courses.html">Courses</a>
+        <a href="/assignments.html">Assignments</a>
+        <a href="/study.html">Study log</a>
+      </nav>
+      <div class="sidebar-tools">
+        <button type="button" id="theme-toggle">Light mode</button>
+      </div>
+    </aside>
+    <main class="main">
+      <h2 style="margin-top: 0;">Assignments</h2>
+      <div class="card">
+        <h2>Add assignment</h2>
+        <p id="form-error" class="error hidden"></p>
+        <form id="assignment-form">
+          <label>Course</label>
+          <select id="course_id" required></select>
+          <label>Title</label>
+          <input type="text" id="title" required />
+          <label>Category</label>
+          <select id="category">
+            <option value="homework">Homework</option>
+            <option value="exam">Exam</option>
+            <option value="reading">Reading</option>
+            <option value="other" selected>Other</option>
+          </select>
+          <label>Due date</label>
+          <input type="date" id="due_date" />
+          <label>Priority</label>
+          <select id="priority">
+            <option value="low">Low</option>
+            <option value="medium" selected>Medium</option>
+            <option value="high">High</option>
+          </select>
+          <label>Status</label>
+          <select id="status">
+            <option value="todo">To do</option>
+            <option value="in_progress">In progress</option>
+            <option value="done">Done</option>
+          </select>
+          <button type="submit">Add</button>
+        </form>
+      </div>
+      <div class="card">
+        <h2>Filter</h2>
+        <label>Status</label>
+        <select id="filter-status">
+          <option value="">All statuses</option>
+          <option value="todo">To do</option>
+          <option value="in_progress">In progress</option>
+          <option value="done">Done</option>
+        </select>
+        <label>Due</label>
+        <select id="filter-due">
+          <option value="">Any date</option>
+          <option value="overdue">Overdue</option>
+          <option value="week">Due this week</option>
+        </select>
+      </div>
+      <div class="card">
+        <h2>List</h2>
+        <div id="assignment-list"></div>
+      </div>
+    </main>
+  </div>
+  <script src="/js/api.js"></script>
+  <script src="/js/layout.js"></script>
+  <script>
+    (function () {
+      if (!requireAuth()) return;
+      initLayout("assignments");
+      let coursesById = {};
+
+      async function loadCoursesSelect() {
+        const courses = await api("/api/courses");
+        coursesById = Object.fromEntries(courses.map((c) => [c.id, c]));
+        document.getElementById("course_id").innerHTML = courses
+          .map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`)
+          .join("");
+      }
+
+      async function loadAssignments() {
+        const params = new URLSearchParams();
+        const status = document.getElementById("filter-status").value;
+        if (status) params.set("status", status);
+        const due = document.getElementById("filter-due").value;
+        const today = new Date();
+        const iso = (d) => d.toISOString().slice(0, 10);
+        if (due === "overdue") {
+          const y = new Date(today);
+          y.setDate(y.getDate() - 1);
+          params.set("due_before", iso(y));
+        } else if (due === "week") {
+          const end = new Date(today);
+          end.setDate(end.getDate() + (7 - end.getDay()));
+          params.set("due_after", iso(today));
+          params.set("due_before", iso(end));
+        }
+        const q = params.toString() ? `?${params}` : "";
+        const items = await api(`/api/assignments${q}`);
+        const el = document.getElementById("assignment-list");
+        if (!items.length) {
+          el.innerHTML = `<p style="color: var(--muted);">No assignments.</p>`;
+          return;
+        }
+        el.innerHTML = items.map((a) => {
+          const course = coursesById[a.course_id];
+          return `
+          <div class="list-item" data-id="${a.id}">
+            <strong>${escapeHtml(a.title)}</strong>
+            <span class="badge ${a.category}">${a.category}</span>
+            <span class="badge">${a.status}</span>
+            <span class="badge">${a.priority}</span>
+            ${course ? `<a href="${courseUrl(a.course_id)}" style="color:${escapeHtml(course.color)}">${escapeHtml(course.name)}</a>` : ""}
+            <span style="color: var(--muted);"> ${formatDate(a.due_date)}</span>
+            <div class="inline-actions">
+              ${a.status !== "done" ? `<button type="button" class="btn-secondary btn-done">Done</button>` : ""}
+              <button type="button" class="btn-secondary btn-edit">Edit</button>
+              <button type="button" class="btn-danger btn-del">Delete</button>
+            </div>
+          </div>`;
+        }).join("");
+
+        el.querySelectorAll(".btn-done").forEach((btn) => {
+          btn.onclick = async () => {
+            const id = btn.closest(".list-item").dataset.id;
+            await api(`/api/assignments/${id}`, { method: "PATCH", body: JSON.stringify({ status: "done" }) });
+            loadAssignments();
+          };
+        });
+        el.querySelectorAll(".btn-del").forEach((btn) => {
+          btn.onclick = async () => {
+            if (!confirm("Delete this assignment?")) return;
+            const id = btn.closest(".list-item").dataset.id;
+            await api(`/api/assignments/${id}`, { method: "DELETE" });
+            loadAssignments();
+          };
+        });
+        el.querySelectorAll(".btn-edit").forEach((btn) => {
+          btn.onclick = async () => {
+            const row = btn.closest(".list-item");
+            const id = row.dataset.id;
+            const item = items.find((x) => String(x.id) === id);
+            const title = prompt("Title", item.title);
+            if (title === null) return;
+            await api(`/api/assignments/${id}`, {
+              method: "PATCH",
+              body: JSON.stringify({ title: title.trim() }),
+            });
+            loadAssignments();
+          };
+        });
+      }
+
+      document.getElementById("filter-status").onchange = loadAssignments;
+      document.getElementById("filter-due").onchange = loadAssignments;
+      document.getElementById("assignment-form").onsubmit = async (e) => {
+        e.preventDefault();
+        const errEl = document.getElementById("form-error");
+        errEl.classList.add("hidden");
+        try {
+          const due = document.getElementById("due_date").value;
+          await api("/api/assignments", {
+            method: "POST",
+            body: JSON.stringify({
+              course_id: Number(document.getElementById("course_id").value),
+              title: document.getElementById("title").value.trim(),
+              category: document.getElementById("category").value,
+              due_date: due || null,
+              priority: document.getElementById("priority").value,
+              status: document.getElementById("status").value,
+            }),
+          });
+          e.target.reset();
+          loadAssignments();
+        } catch (err) {
+          showError(errEl, err.message);
+        }
+      };
+
+      loadCoursesSelect().then(loadAssignments);
+    })();
+  </script>
+</body>
+</html>

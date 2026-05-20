@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Profile — StudyHub</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>" />
+</head>
+<body>
+  <button class="nav-toggle" id="nav-toggle" type="button">☰ Menu</button>
+  <div class="nav-overlay" id="nav-overlay"></div>
+  <div class="layout">
+    <aside class="sidebar">
+      <h1>StudyHub</h1>
+      <nav>
+        <a href="/index.html">Dashboard</a>
+        <a href="/courses.html">Courses</a>
+        <a href="/assignments.html">Assignments</a>
+        <a href="/study.html">Study log</a>
+      </nav>
+      <div class="sidebar-tools">
+        <button type="button" id="theme-toggle">Light mode</button>
+      </div>
+    </aside>
+    <main class="main">
+      <h2 style="margin-top:0;">Profile</h2>
+      <div class="card">
+        <h2>Account</h2>
+        <p id="profile-error" class="error hidden"></p>
+        <p id="profile-ok" class="success-msg hidden">Saved.</p>
+        <form id="profile-form">
+          <label>Email</label>
+          <input type="email" id="email" disabled />
+          <label>Name</label>
+          <input type="text" id="name" required />
+          <label>
+            <input type="checkbox" id="reminders" /> Email reminders for assignments due tomorrow
+          </label>
+          <button type="submit">Save profile</button>
+        </form>
+      </div>
+      <div class="card">
+        <h2>Change password</h2>
+        <p id="pw-error" class="error hidden"></p>
+        <p id="pw-ok" class="success-msg hidden">Password updated.</p>
+        <form id="password-form">
+          <label>Current password</label>
+          <input type="password" id="current" required />
+          <label>New password (min 6)</label>
+          <input type="password" id="newpw" required minlength="6" />
+          <button type="submit">Update password</button>
+        </form>
+      </div>
+      <div class="card">
+        <h2>Study goals (weekly)</h2>
+        <p id="goal-error" class="error hidden"></p>
+        <form id="goal-form">
+          <label>Course</label>
+          <select id="goal-course" required></select>
+          <label>Target minutes per week</label>
+          <input type="number" id="goal-minutes" min="30" max="10080" value="300" required />
+          <button type="submit">Set goal</button>
+        </form>
+        <div id="goals-list" style="margin-top:1rem;"></div>
+      </div>
+    </main>
+  </div>
+  <script src="/js/api.js"></script>
+  <script src="/js/layout.js"></script>
+  <script>
+    (function () {
+      if (!requireAuth()) return;
+      initLayout("profile");
+
+      async function loadProfile() {
+        const p = await api("/api/profile");
+        document.getElementById("email").value = p.email;
+        document.getElementById("name").value = p.name;
+        document.getElementById("reminders").checked = p.email_reminders_enabled;
+      }
+
+      async function loadGoals() {
+        const [goals, courses] = await Promise.all([api("/api/goals"), api("/api/courses")]);
+        document.getElementById("goal-course").innerHTML = courses
+          .map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`)
+          .join("");
+        const el = document.getElementById("goals-list");
+        if (!goals.length) {
+          el.innerHTML = `<p style="color:var(--muted);">No goals yet.</p>`;
+          return;
+        }
+        el.innerHTML = goals
+          .map(
+            (g) => `
+          <div class="list-item">
+            <span style="color:${escapeHtml(g.course_color)}">${escapeHtml(g.course_name)}</span>
+            — ${formatMinutes(g.minutes_this_week)} / ${formatMinutes(g.weekly_minutes)}
+            <div class="progress-bar"><span style="width:${g.progress_percent}%"></span></div>
+            <div class="inline-actions">
+              <button type="button" class="btn-danger btn-delete-goal" data-id="${g.id}">Remove</button>
+            </div>
+          </div>`
+          )
+          .join("");
+        el.querySelectorAll(".btn-delete-goal").forEach((btn) => {
+          btn.onclick = async () => {
+            await api(`/api/goals/${btn.dataset.id}`, { method: "DELETE" });
+            loadGoals();
+          };
+        });
+      }
+
+      document.getElementById("profile-form").onsubmit = async (e) => {
+        e.preventDefault();
+        document.getElementById("profile-error").classList.add("hidden");
+        try {
+          await api("/api/profile", {
+            method: "PATCH",
+            body: JSON.stringify({
+              name: document.getElementById("name").value.trim(),
+              email_reminders_enabled: document.getElementById("reminders").checked,
+            }),
+          });
+          document.getElementById("profile-ok").classList.remove("hidden");
+        } catch (err) {
+          showError(document.getElementById("profile-error"), err.message);
+        }
+      };
+
+      document.getElementById("password-form").onsubmit = async (e) => {
+        e.preventDefault();
+        document.getElementById("pw-error").classList.add("hidden");
+        try {
+          await api("/api/profile/password", {
+            method: "POST",
+            body: JSON.stringify({
+              current_password: document.getElementById("current").value,
+              new_password: document.getElementById("newpw").value,
+            }),
+          });
+          document.getElementById("pw-ok").classList.remove("hidden");
+          e.target.reset();
+        } catch (err) {
+          showError(document.getElementById("pw-error"), err.message);
+        }
+      };
+
+      document.getElementById("goal-form").onsubmit = async (e) => {
+        e.preventDefault();
+        document.getElementById("goal-error").classList.add("hidden");
+        try {
+          await api("/api/goals", {
+            method: "POST",
+            body: JSON.stringify({
+              course_id: Number(document.getElementById("goal-course").value),
+              weekly_minutes: Number(document.getElementById("goal-minutes").value),
+            }),
+          });
+          loadGoals();
+        } catch (err) {
+          showError(document.getElementById("goal-error"), err.message);
+        }
+      };
+
+      loadProfile();
+      loadGoals();
+    })();
+  </script>
+</body>
+</html>

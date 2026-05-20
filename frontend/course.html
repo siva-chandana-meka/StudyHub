@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Course — StudyHub</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>" />
+</head>
+<body>
+  <button class="nav-toggle" id="nav-toggle" type="button">☰ Menu</button>
+  <div class="nav-overlay" id="nav-overlay"></div>
+  <div class="layout">
+    <aside class="sidebar">
+      <h1>StudyHub</h1>
+      <nav>
+        <a href="/index.html">Dashboard</a>
+        <a href="/courses.html">Courses</a>
+        <a href="/assignments.html">Assignments</a>
+        <a href="/study.html">Study log</a>
+      </nav>
+      <div class="sidebar-tools">
+        <button type="button" id="theme-toggle">Light mode</button>
+      </div>
+    </aside>
+    <main class="main">
+      <p><a href="/courses.html">← Back to courses</a></p>
+      <div id="load-error" class="error hidden"></div>
+      <div id="page-content" class="hidden">
+        <div class="course-header">
+          <div class="swatch" id="header-swatch"></div>
+          <div>
+            <h2 id="header-name"></h2>
+            <p id="header-stats" style="color: var(--muted); margin: 0.25rem 0 0;"></p>
+            <p id="syllabus-link" style="margin: 0.5rem 0 0;"></p>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Course details</h2>
+          <p id="save-msg" class="success-msg hidden">Details saved.</p>
+          <p id="detail-error" class="error hidden"></p>
+          <form id="detail-form">
+            <label>Name</label>
+            <input type="text" id="name" required />
+            <label>Color</label>
+            <input type="color" id="color" />
+            <label>Teacher</label>
+            <input type="text" id="teacher" placeholder="e.g. Dr. Smith" />
+            <label>Room / location</label>
+            <input type="text" id="room" placeholder="e.g. Room 204" />
+            <label>Schedule</label>
+            <input type="text" id="schedule" placeholder="e.g. Mon & Wed 10:00–11:30" />
+            <label>Syllabus / course link</label>
+            <input type="url" id="syllabus_url" placeholder="https://..." />
+            <label>Notes / description</label>
+            <textarea id="description" rows="4" placeholder="Syllabus link, exam dates, topics…"></textarea>
+            <div class="actions-row">
+              <button type="submit">Save details</button>
+              <button type="button" class="btn-danger" id="delete-course">Delete course</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="card">
+          <h2>Assignments for this course</h2>
+          <p id="assignment-error" class="error hidden"></p>
+          <form id="assignment-form">
+            <label>Title</label>
+            <input type="text" id="a-title" required />
+            <label>Category</label>
+            <select id="a-category">
+              <option value="homework">Homework</option>
+              <option value="exam">Exam</option>
+              <option value="reading">Reading</option>
+              <option value="other" selected>Other</option>
+            </select>
+            <label>Due date</label>
+            <input type="date" id="a-due" />
+            <label>Priority</label>
+            <select id="a-priority">
+              <option value="low">Low</option>
+              <option value="medium" selected>Medium</option>
+              <option value="high">High</option>
+            </select>
+            <label>Status</label>
+            <select id="a-status">
+              <option value="todo">To do</option>
+              <option value="in_progress">In progress</option>
+              <option value="done">Done</option>
+            </select>
+            <button type="submit">Add assignment</button>
+          </form>
+          <div id="assignment-list" style="margin-top: 1rem;"></div>
+        </div>
+
+        <div class="card">
+          <h2>Study sessions for this course</h2>
+          <p id="session-error" class="error hidden"></p>
+          <form id="session-form">
+            <label>Minutes</label>
+            <input type="number" id="s-minutes" min="1" max="1440" required />
+            <label>Date</label>
+            <input type="date" id="s-date" required />
+            <label>Notes</label>
+            <input type="text" id="s-notes" placeholder="Optional" />
+            <button type="submit">Log session</button>
+          </form>
+          <div id="session-list" style="margin-top: 1rem;"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <script src="/js/api.js"></script>
+  <script src="/js/layout.js"></script>
+  <script>
+    (function () {
+      if (!requireAuth()) return;
+      initLayout("courses");
+
+      const courseId = Number(new URLSearchParams(location.search).get("id"));
+      const loadError = document.getElementById("load-error");
+      const pageContent = document.getElementById("page-content");
+      const detailError = document.getElementById("detail-error");
+      const saveMsg = document.getElementById("save-msg");
+
+      if (!courseId) {
+        showError(loadError, "No course selected. Go back to Courses and open a course.");
+        return;
+      }
+
+      document.getElementById("s-date").valueAsDate = new Date();
+
+      function fillForm(course) {
+        document.getElementById("header-swatch").style.background = course.color;
+        document.getElementById("header-name").textContent = course.name;
+        document.title = `${course.name} — StudyHub`;
+        document.getElementById("header-stats").textContent =
+          `${course.assignment_count} assignment(s) · ${formatMinutes(course.study_minutes_total)} studied`;
+        document.getElementById("name").value = course.name;
+        document.getElementById("color").value = course.color;
+        document.getElementById("teacher").value = course.teacher || "";
+        document.getElementById("room").value = course.room || "";
+        document.getElementById("schedule").value = course.schedule || "";
+        document.getElementById("syllabus_url").value = course.syllabus_url || "";
+        document.getElementById("description").value = course.description || "";
+        const linkEl = document.getElementById("syllabus-link");
+        if (course.syllabus_url) {
+          linkEl.innerHTML = `<a href="${escapeHtml(course.syllabus_url)}" target="_blank" rel="noopener">Open syllabus / course link</a>`;
+        } else {
+          linkEl.textContent = "";
+        }
+      }
+
+      function renderAssignments(items) {
+        const el = document.getElementById("assignment-list");
+        if (!items.length) {
+          el.innerHTML = `<p style="color: var(--muted);">No assignments yet.</p>`;
+          return;
+        }
+        el.innerHTML = items
+          .map(
+            (a) => `
+          <div class="list-item">
+            <strong>${escapeHtml(a.title)}</strong>
+            <span class="badge ${a.category}">${a.category}</span>
+            <span class="badge">${a.status}</span>
+            <span class="badge">${a.priority}</span>
+            <span style="color: var(--muted);"> ${formatDate(a.due_date)}</span>
+          </div>`
+          )
+          .join("");
+      }
+
+      function renderSessions(items) {
+        const el = document.getElementById("session-list");
+        if (!items.length) {
+          el.innerHTML = `<p style="color: var(--muted);">No study sessions yet.</p>`;
+          return;
+        }
+        el.innerHTML = items
+          .map(
+            (s) => `
+          <div class="list-item">
+            <strong>${formatMinutes(s.minutes)}</strong>
+            <span style="color: var(--muted);"> ${formatDate(s.date)}</span>
+            ${s.notes ? `<br/><span style="color:var(--muted);font-size:0.875rem;">${escapeHtml(s.notes)}</span>` : ""}
+          </div>`
+          )
+          .join("");
+      }
+
+      async function loadCourse() {
+        const course = await api(`/api/courses/${courseId}/detail`);
+        fillForm(course);
+        renderAssignments(course.assignments);
+        renderSessions(course.study_sessions);
+        pageContent.classList.remove("hidden");
+      }
+
+      document.getElementById("detail-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        detailError.classList.add("hidden");
+        saveMsg.classList.add("hidden");
+        try {
+          await api(`/api/courses/${courseId}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              name: document.getElementById("name").value.trim(),
+              color: document.getElementById("color").value,
+              teacher: document.getElementById("teacher").value.trim() || null,
+              room: document.getElementById("room").value.trim() || null,
+              schedule: document.getElementById("schedule").value.trim() || null,
+              syllabus_url: document.getElementById("syllabus_url").value.trim() || null,
+              description: document.getElementById("description").value.trim() || null,
+            }),
+          });
+          saveMsg.classList.remove("hidden");
+          await loadCourse();
+        } catch (err) {
+          showError(detailError, err.message);
+        }
+      });
+
+      document.getElementById("assignment-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const errEl = document.getElementById("assignment-error");
+        errEl.classList.add("hidden");
+        try {
+          const due = document.getElementById("a-due").value;
+          await api("/api/assignments", {
+            method: "POST",
+            body: JSON.stringify({
+              course_id: courseId,
+              title: document.getElementById("a-title").value.trim(),
+              category: document.getElementById("a-category").value,
+              due_date: due || null,
+              priority: document.getElementById("a-priority").value,
+              status: document.getElementById("a-status").value,
+            }),
+          });
+          e.target.reset();
+          await loadCourse();
+        } catch (err) {
+          showError(errEl, err.message);
+        }
+      });
+
+      document.getElementById("session-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const errEl = document.getElementById("session-error");
+        errEl.classList.add("hidden");
+        try {
+          await api("/api/sessions", {
+            method: "POST",
+            body: JSON.stringify({
+              course_id: courseId,
+              minutes: Number(document.getElementById("s-minutes").value),
+              date: document.getElementById("s-date").value,
+              notes: document.getElementById("s-notes").value.trim() || null,
+            }),
+          });
+          document.getElementById("s-minutes").value = "";
+          document.getElementById("s-notes").value = "";
+          document.getElementById("s-date").valueAsDate = new Date();
+          await loadCourse();
+        } catch (err) {
+          showError(errEl, err.message);
+        }
+      });
+
+      document.getElementById("delete-course").addEventListener("click", async () => {
+        if (!confirm("Delete this course and all its assignments and study sessions?")) return;
+        await api(`/api/courses/${courseId}`, { method: "DELETE" });
+        location.href = "/courses.html";
+      });
+
+      loadCourse().catch((err) => showError(loadError, err.message));
+    })();
+  </script>
+</body>
+</html>

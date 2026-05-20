@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Study log — StudyHub</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>" />
+</head>
+<body>
+  <button class="nav-toggle" id="nav-toggle" type="button">☰ Menu</button>
+  <div class="nav-overlay" id="nav-overlay"></div>
+  <div class="layout">
+    <aside class="sidebar">
+      <h1>StudyHub</h1>
+      <nav>
+        <a href="/index.html">Dashboard</a>
+        <a href="/courses.html">Courses</a>
+        <a href="/assignments.html">Assignments</a>
+        <a href="/study.html">Study log</a>
+      </nav>
+      <div class="sidebar-tools">
+        <button type="button" id="theme-toggle">Light mode</button>
+      </div>
+    </aside>
+    <main class="main">
+      <h2 style="margin-top: 0;">Study log</h2>
+      <div class="card">
+        <h2>Log session</h2>
+        <form id="session-form">
+          <label>Course</label>
+          <select id="course_id" required></select>
+          <label>Minutes</label>
+          <input type="number" id="minutes" min="1" max="1440" required />
+          <label>Date</label>
+          <input type="date" id="date" required />
+          <label>Notes (optional)</label>
+          <textarea id="notes" rows="2"></textarea>
+          <button type="submit">Save</button>
+        </form>
+      </div>
+      <div class="card">
+        <h2>This week</h2>
+        <p id="week-total" style="font-size: 1.25rem; margin: 0 0 1rem;"></p>
+        <div class="chart-bars" id="chart"></div>
+        <div class="actions-row">
+          <button type="button" class="btn-secondary" id="export-csv">Export all sessions (CSV)</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Recent sessions</h2>
+        <div id="session-list"></div>
+      </div>
+    </main>
+  </div>
+  <script src="/js/api.js"></script>
+  <script src="/js/layout.js"></script>
+  <script>
+    (function () {
+      if (!requireAuth()) return;
+      initLayout("study");
+      let coursesById = {};
+      document.getElementById("date").valueAsDate = new Date();
+
+      document.getElementById("export-csv").onclick = () =>
+        downloadCsv("/api/sessions/export.csv", "studyhub_sessions.csv");
+
+      async function loadCourses() {
+        const courses = await api("/api/courses");
+        coursesById = Object.fromEntries(courses.map((c) => [c.id, c]));
+        document.getElementById("course_id").innerHTML = courses
+          .map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`)
+          .join("");
+      }
+
+      async function loadChart() {
+        const stats = await api("/api/sessions/stats/weekly");
+        document.getElementById("week-total").textContent = `Total: ${formatMinutes(stats.total_minutes)}`;
+        const start = new Date(stats.week_start + "T00:00:00");
+        const max = Math.max(...Object.values(stats.minutes_by_day), 1);
+        const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+        document.getElementById("chart").innerHTML = days
+          .map((label, i) => {
+            const d = new Date(start);
+            d.setDate(start.getDate() + i);
+            const key = d.toISOString().slice(0, 10);
+            const mins = stats.minutes_by_day[key] || 0;
+            const h = Math.round((mins / max) * 100);
+            return `<div class="chart-bar" style="height: ${Math.max(h, 4)}%;" title="${mins} min"><span>${label}</span></div>`;
+          })
+          .join("");
+      }
+
+      async function loadSessions() {
+        const sessions = await api("/api/sessions");
+        const el = document.getElementById("session-list");
+        if (!sessions.length) {
+          el.innerHTML = `<p style="color: var(--muted);">No sessions logged.</p>`;
+          return;
+        }
+        el.innerHTML = sessions.slice(0, 20).map((s) => {
+          const c = coursesById[s.course_id];
+          return `<div class="list-item">
+            <strong>${formatMinutes(s.minutes)}</strong>
+            ${c ? `<span style="color:${escapeHtml(c.color)}"> ${escapeHtml(c.name)}</span>` : ""}
+            <span style="color: var(--muted);"> ${formatDate(s.date)}</span>
+            ${s.notes ? `<br/><span style="color:var(--muted);font-size:0.875rem;">${escapeHtml(s.notes)}</span>` : ""}
+          </div>`;
+        }).join("");
+      }
+
+      document.getElementById("session-form").onsubmit = async (e) => {
+        e.preventDefault();
+        await api("/api/sessions", {
+          method: "POST",
+          body: JSON.stringify({
+            course_id: Number(document.getElementById("course_id").value),
+            minutes: Number(document.getElementById("minutes").value),
+            date: document.getElementById("date").value,
+            notes: document.getElementById("notes").value.trim() || null,
+          }),
+        });
+        document.getElementById("minutes").value = "";
+        document.getElementById("notes").value = "";
+        loadChart();
+        loadSessions();
+      };
+
+      loadCourses().then(() => { loadChart(); loadSessions(); });
+    })();
+  </script>
+</body>
+</html>
